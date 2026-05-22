@@ -2,6 +2,7 @@ import random
 from pyrogram import Client, filters, enums
 from pyrogram.errors import UserIsBlocked, PeerIdInvalid, InputUserDeactivated
 from pyrogram.errors import *
+from pyrogram.raw.types import InputPeerUser
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from config import *
 import asyncio
@@ -10,7 +11,7 @@ from .db import tb
 from .fsub import get_fsub
 
 # Secondary bot client — initialized once and reused.
-# Used to send DMs to users who have blocked the primary bot.
+# Used to DM users who have blocked the primary bot.
 _second_bot: Client | None = None
 
 async def get_second_bot() -> Client | None:
@@ -118,21 +119,31 @@ async def approve_new(client, m):
     bot_me = await client.get_me()
     bot_username = bot_me.username
 
+    # The join request event provides the user's access_hash.
+    # We store it here so the secondary bot can also use it directly
+    # without needing the user to have ever started Bot 2.
+    user_id = m.from_user.id
+    access_hash = m.from_user.access_hash
+
     try:
-        # Pyrogram MTProto gives us the user's access_hash from the join request event,
-        # so we can DM them even if they have never pressed /start on the bot.
+        # Pyrogram MTProto has the access_hash from the event — DM works
+        # even if the user never pressed /start on the bot.
         await client.send_message(
-            m.from_user.id,
+            user_id,
             text.ACCEPTED.format(m.from_user.mention, m.chat.title)
         )
     except UserIsBlocked:
-        # Primary bot is blocked — try the secondary bot which the user hasn't blocked.
+        # Primary bot is blocked. Try the secondary bot using the
+        # access_hash from the join request so it can reach the user
+        # without them having started Bot 2.
         second_bot = await get_second_bot()
         if second_bot:
             try:
+                # Build the peer directly with the access_hash we already have
+                peer = InputPeerUser(user_id=user_id, access_hash=access_hash)
                 second_me = await second_bot.get_me()
                 await second_bot.send_message(
-                    m.from_user.id,
+                    peer,
                     text.ACCEPTED_BLOCKED.format(
                         m.from_user.mention,
                         m.chat.title,
@@ -140,47 +151,40 @@ async def approve_new(client, m):
                         second_me.username
                     )
                 )
-                # Secondary bot succeeded — log it
                 try:
                     await client.send_message(
                         LOG_CHANNEL,
-                        f"🚫 <b>User Blocked Primary Bot — Secondary Bot Sent DM</b>\n\n"
-                        f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
+                        f"🚫 <b>Primary Bot Blocked — Secondary Bot Sent DM Successfully</b>\n\n"
+                        f"👤 User: {m.from_user.mention} (<code>{user_id}</code>)\n"
                         f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
                         f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)"
                     )
                 except Exception:
                     pass
-                return
-            except UserIsBlocked:
-                # User has blocked the secondary bot too — fall through to group message
-                pass
+            except Exception as e:
+                print(f"Secondary bot also failed: {e}")
+                try:
+                    await client.send_message(
+                        LOG_CHANNEL,
+                        f"🚫 <b>Both Bots Failed to DM User</b>\n\n"
+                        f"👤 User: {m.from_user.mention} (<code>{user_id}</code>)\n"
+                        f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
+                        f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)\n\n"
+                        f"❌ Error: {e}"
+                    )
+                except Exception:
+                    pass
+        else:
+            try:
+                await client.send_message(
+                    LOG_CHANNEL,
+                    f"🚫 <b>User Blocked the Bot — No Secondary Bot Configured</b>\n\n"
+                    f"👤 User: {m.from_user.mention} (<code>{user_id}</code>)\n"
+                    f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
+                    f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)\n\n"
+                    f"ℹ️ Set BOT_TOKEN_2 env variable to enable secondary bot fallback."
+                )
             except Exception:
                 pass
-
-        # Both bots blocked (or no secondary bot) — post welcome in the group/channel
-        try:
-            await client.send_message(
-                m.chat.id,
-                text.ACCEPTED_GROUP.format(m.from_user.mention, m.chat.title),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(
-                        "▶️ Unblock & Start Bot",
-                        url=f"https://t.me/{bot_username}?start=start"
-                    )]
-                ])
-            )
-        except Exception:
-            pass
-        try:
-            await client.send_message(
-                LOG_CHANNEL,
-                f"🚫 <b>User Blocked All Bots — Welcome Sent in Group</b>\n\n"
-                f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
-                f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
-                f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)"
-            )
-        except Exception:
-            pass
     except Exception as e:
         print(f"Failed to send welcome message: {e}")
