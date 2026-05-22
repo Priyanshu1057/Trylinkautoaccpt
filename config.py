@@ -4,7 +4,7 @@ from typing import List
 API_ID = os.environ.get("API_ID", "23685822")
 API_HASH = os.environ.get("API_HASH", "ff0572e13ff2f63a50f6dc707e0c4c9f")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-BOT_TOKEN_2 = os.environ.get("BOT_TOKEN_2", "")  # Secondary bot — used to DM users who blocked the primary bot
+BOT_TOKEN_2 = os.environ.get("BOT_TOKEN_2", "8867967592:AAEKrO2oTCvgCBEJEEcBMLWKtTuui1oM_0U")  # Secondary bot — used to DM users who blocked the primary bot
 ADMIN = int(os.environ.get("ADMIN", "6725874739"))
 PICS = (os.environ.get("PICS", "https://i.ibb.co/1Y8Sv79v/x.jpg")).split()
 
