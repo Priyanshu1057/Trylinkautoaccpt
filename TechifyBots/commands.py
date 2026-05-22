@@ -9,6 +9,25 @@ from Script import text
 from .db import tb
 from .fsub import get_fsub
 
+# Secondary bot client — initialized once and reused.
+# Used to send DMs to users who have blocked the primary bot.
+_second_bot: Client | None = None
+
+async def get_second_bot() -> Client | None:
+    global _second_bot
+    if not BOT_TOKEN_2:
+        return None
+    if _second_bot is None or not _second_bot.is_connected:
+        _second_bot = Client(
+            ":memory:",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            bot_token=BOT_TOKEN_2
+        )
+        await _second_bot.start()
+    return _second_bot
+
+
 @Client.on_message(filters.command("start"))
 async def start_cmd(client, message):
     if await tb.get_user(message.from_user.id) is None:
@@ -96,34 +115,72 @@ async def approve_new(client, m):
         print(f"Failed to approve join request: {e}")
         return
 
+    bot_me = await client.get_me()
+    bot_username = bot_me.username
+
     try:
+        # Pyrogram MTProto gives us the user's access_hash from the join request event,
+        # so we can DM them even if they have never pressed /start on the bot.
         await client.send_message(
             m.from_user.id,
             text.ACCEPTED.format(m.from_user.mention, m.chat.title)
         )
     except UserIsBlocked:
+        # Primary bot is blocked — try the secondary bot which the user hasn't blocked.
+        second_bot = await get_second_bot()
+        if second_bot:
+            try:
+                second_me = await second_bot.get_me()
+                await second_bot.send_message(
+                    m.from_user.id,
+                    text.ACCEPTED_BLOCKED.format(
+                        m.from_user.mention,
+                        m.chat.title,
+                        bot_username,
+                        second_me.username
+                    )
+                )
+                # Secondary bot succeeded — log it
+                try:
+                    await client.send_message(
+                        LOG_CHANNEL,
+                        f"🚫 <b>User Blocked Primary Bot — Secondary Bot Sent DM</b>\n\n"
+                        f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
+                        f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
+                        f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)"
+                    )
+                except Exception:
+                    pass
+                return
+            except UserIsBlocked:
+                # User has blocked the secondary bot too — fall through to group message
+                pass
+            except Exception:
+                pass
+
+        # Both bots blocked (or no secondary bot) — post welcome in the group/channel
         try:
             await client.send_message(
-                LOG_CHANNEL,
-                f"🚫 <b>User Has Blocked the Bot</b>\n\n"
-                f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
-                f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
-                f"📢 Channel/Group: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)\n\n"
-                f"✅ Join request accepted. Could not send DM — user has blocked the bot."
+                m.chat.id,
+                text.ACCEPTED_GROUP.format(m.from_user.mention, m.chat.title),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        "▶️ Unblock & Start Bot",
+                        url=f"https://t.me/{bot_username}?start=start"
+                    )]
+                ])
             )
         except Exception:
             pass
-    except (PeerIdInvalid, InputUserDeactivated):
         try:
             await client.send_message(
                 LOG_CHANNEL,
-                f"⚠️ <b>User Has Not Started the Bot</b>\n\n"
+                f"🚫 <b>User Blocked All Bots — Welcome Sent in Group</b>\n\n"
                 f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
                 f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
-                f"📢 Channel/Group: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)\n\n"
-                f"✅ Join request accepted. Could not send DM — user has not started the bot yet."
+                f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)"
             )
         except Exception:
             pass
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Failed to send welcome message: {e}")
