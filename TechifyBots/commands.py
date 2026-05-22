@@ -1,5 +1,6 @@
 import random
 from pyrogram import Client, filters, enums
+from pyrogram.errors import UserIsBlocked, PeerIdInvalid, InputUserDeactivated
 from pyrogram.errors import *
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from config import *
@@ -91,13 +92,38 @@ async def approve_new(client, m):
         return
     try:
         await client.approve_chat_join_request(m.chat.id, m.from_user.id)
+    except Exception as e:
+        print(f"Failed to approve join request: {e}")
+        return
+
+    try:
+        await client.send_message(
+            m.from_user.id,
+            text.ACCEPTED.format(m.from_user.mention, m.chat.title)
+        )
+    except UserIsBlocked:
         try:
             await client.send_message(
-                m.from_user.id,
-                f"{m.from_user.mention},\n\n𝖸𝗈𝗎𝗋 𝖱𝖾𝗊𝗎𝗌𝗍 𝖳𝗈 𝖩𝗈𝗂𝗇 {m.chat.title} 𝖧𝖺𝗌 𝖡𝖾𝖾𝗇 𝖠𝖼𝖼𝖾𝗉𝗍𝖾𝖽."
+                LOG_CHANNEL,
+                f"🚫 <b>User Has Blocked the Bot</b>\n\n"
+                f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
+                f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
+                f"📢 Channel/Group: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)\n\n"
+                f"✅ Join request accepted. Could not send DM — user has blocked the bot."
             )
-        except:
+        except Exception:
             pass
-    except Exception as e:
-        print(str(e))
+    except (PeerIdInvalid, InputUserDeactivated):
+        try:
+            await client.send_message(
+                LOG_CHANNEL,
+                f"⚠️ <b>User Has Not Started the Bot</b>\n\n"
+                f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
+                f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
+                f"📢 Channel/Group: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)\n\n"
+                f"✅ Join request accepted. Could not send DM — user has not started the bot yet."
+            )
+        except Exception:
+            pass
+    except Exception:
         pass
