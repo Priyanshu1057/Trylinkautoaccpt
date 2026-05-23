@@ -1,8 +1,27 @@
+import aiohttp
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from config import ADMIN, API_ID, API_HASH
+from config import ADMIN
 from .db import tb
 from .second import secondary_bots, start_extra_bot, stop_extra_bot
+
+
+async def _validate_token(token: str) -> dict | None:
+    """
+    Validate a bot token via plain HTTP (no Pyrogram session).
+    Returns the bot info dict on success, None on failure.
+    Does NOT touch the asyncio event loop or MongoDB connection pool.
+    """
+    url = f"https://api.telegram.org/bot{token}/getMe"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                data = await resp.json()
+                if data.get("ok"):
+                    return data["result"]
+    except Exception as e:
+        print(f"Token validation HTTP error: {e}")
+    return None
 
 
 @Client.on_message(filters.command("addbot") & filters.private & filters.user(ADMIN))
@@ -18,55 +37,54 @@ async def add_bot_cmd(client: Client, message: Message) -> None:
     token = args[1].strip()
     msg = await message.reply("⏳ **Verifying token...**")
 
-    # Validate token by connecting briefly
-    try:
-        test = Client(":memory:", api_id=API_ID, api_hash=API_HASH, bot_token=token)
-        await test.start()
-        me = await test.get_me()
-        await test.stop()
-    except Exception as e:
-        return await msg.edit(f"❌ **Invalid token or failed to connect.**\n\n`{e}`")
+    # Validate via HTTP — no Pyrogram session start/stop, no event loop disruption
+    bot_info = await _validate_token(token)
+    if not bot_info:
+        return await msg.edit(
+            "❌ **Invalid token or Telegram API unreachable.**\n\n"
+            "Double-check the token and try again."
+        )
 
-    await msg.edit(f"✅ Token valid — @{me.username}\n⏳ **Saving and starting...**")
+    username = bot_info.get("username", "unknown")
+    await msg.edit(f"✅ Token valid — @{username}\n⏳ **Saving to database...**")
 
-    # Upsert into DB (handles both new and retry-after-failure cases)
-    db_error = await tb.upsert_extra_bot(token, me.username)
+    # Save to DB (upsert — safe to retry)
+    db_error = await tb.upsert_extra_bot(token, username)
     if db_error is not None:
         return await msg.edit(
-            f"❌ **Failed to save @{me.username} to database.**\n\n"
+            f"❌ **Failed to save @{username} to database.**\n\n"
             f"**Error:** `{db_error}`\n\n"
             f"Check your `DB_URI` / MongoDB connection and try again."
         )
+
+    await msg.edit(f"✅ Saved — @{username}\n⏳ **Starting bot live...**")
 
     # Check if already running (user may be retrying after a crash)
     already_running = any(
         getattr(b, "_extra_token", None) == token and b.is_connected
         for b in secondary_bots
     )
-
     if already_running:
         return await msg.edit(
-            f"ℹ️ **@{me.username} is already running.**\n\n"
+            f"ℹ️ **@{username} is already running.**\n\n"
             f"🔢 Total secondary bots: `{len(secondary_bots)}`"
         )
 
-    # Start it live — no restart needed
+    # Start live — no restart needed
     bot = await start_extra_bot(token)
     if bot:
         await msg.edit(
             f"✅ **Secondary bot added and started!**\n\n"
-            f"🤖 Bot: @{me.username}\n"
+            f"🤖 Bot: @{username}\n"
             f"🔢 Total secondary bots: `{len(secondary_bots)}`\n\n"
-            f"⚠️ **Important:** Add @{me.username} as admin with **Invite Users** "
+            f"⚠️ **Important:** Add @{username} as admin with **Invite Users** "
             f"permission to all your channels/groups so it can DM new members."
         )
     else:
         await msg.edit(
-            f"⚠️ **@{me.username} saved to DB but failed to start live.**\n\n"
-            f"Possible reasons:\n"
-            f"• Bot token was recently revoked\n"
-            f"• Pyrogram session conflict\n\n"
-            f"It will retry automatically on next restart."
+            f"⚠️ **@{username} saved to DB but failed to start live.**\n\n"
+            f"It will start automatically on next bot restart.\n"
+            f"Make sure the token is not revoked."
         )
 
 
