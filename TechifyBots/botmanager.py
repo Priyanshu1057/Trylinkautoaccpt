@@ -30,10 +30,11 @@ async def add_bot_cmd(client: Client, message: Message) -> None:
     await msg.edit(f"✅ Token valid — @{me.username}\n⏳ **Saving and starting...**")
 
     # Upsert into DB (handles both new and retry-after-failure cases)
-    saved = await tb.upsert_extra_bot(token, me.username)
-    if not saved:
+    db_error = await tb.upsert_extra_bot(token, me.username)
+    if db_error is not None:
         return await msg.edit(
-            f"❌ **Failed to save @{me.username} to database.**\n"
+            f"❌ **Failed to save @{me.username} to database.**\n\n"
+            f"**Error:** `{db_error}`\n\n"
             f"Check your `DB_URI` / MongoDB connection and try again."
         )
 
