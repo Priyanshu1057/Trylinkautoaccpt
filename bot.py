@@ -4,7 +4,7 @@ from pytz import timezone
 from pyrogram import Client
 from aiohttp import web
 from config import API_ID, API_HASH, BOT_TOKEN, ADMIN, LOG_CHANNEL
-from TechifyBots.second import init_second_bot
+from TechifyBots.second import init_secondary_bots, secondary_bots
 
 routes = web.RouteTableDef()
 
@@ -40,10 +40,11 @@ class Bot(Client):
 
         await super().start()
         me = await self.get_me()
-        print(f"Primary bot started as {me.first_name}")
+        print(f"Primary bot started as {me.first_name} (@{me.username})")
 
-        # Start secondary bot (if BOT_TOKEN_2 is set)
-        await init_second_bot()
+        # Start all secondary bots from DB + BOT_TOKEN_2 env var
+        await init_secondary_bots()
+        print(f"Secondary bots running: {len(secondary_bots)}")
 
         if isinstance(ADMIN, int):
             try:
@@ -57,16 +58,20 @@ class Bot(Client):
                     f"**{me.mention} is restarted!**\n\n"
                     f"📅 Date : `{now.strftime('%d %B, %Y')}`\n"
                     f"⏰ Time : `{now.strftime('%I:%M:%S %p')}`\n"
-                    f"🌐 Timezone : `Asia/Kolkata`"
+                    f"🌐 Timezone : `Asia/Kolkata`\n"
+                    f"🤖 Secondary Bots: `{len(secondary_bots)}`"
                 )
                 await self.send_message(LOG_CHANNEL, msg)
             except Exception as e:
                 print(f"Error sending to LOG_CHANNEL: {e}")
 
     async def stop(self, *args):
-        from TechifyBots.second import second_bot
-        if second_bot and second_bot.is_connected:
-            await second_bot.stop()
+        for bot in secondary_bots:
+            try:
+                if bot.is_connected:
+                    await bot.stop()
+            except Exception:
+                pass
         await super().stop()
         print("Bot stopped.")
 
