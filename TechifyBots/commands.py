@@ -1,32 +1,14 @@
 import random
 from pyrogram import Client, filters, enums
-from pyrogram.errors import UserIsBlocked, PeerIdInvalid, InputUserDeactivated
+from pyrogram.errors import UserIsBlocked
 from pyrogram.errors import *
-from pyrogram.raw.types import InputPeerUser
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from config import *
 import asyncio
 from Script import text
 from .db import tb
 from .fsub import get_fsub
-
-# Secondary bot client — initialized once and reused.
-# Used to DM users who have blocked the primary bot.
-_second_bot: Client | None = None
-
-async def get_second_bot() -> Client | None:
-    global _second_bot
-    if not BOT_TOKEN_2:
-        return None
-    if _second_bot is None or not _second_bot.is_connected:
-        _second_bot = Client(
-            ":memory:",
-            api_id=API_ID,
-            api_hash=API_HASH,
-            bot_token=BOT_TOKEN_2
-        )
-        await _second_bot.start()
-    return _second_bot
+from .second import second_bot
 
 
 @Client.on_message(filters.command("start"))
@@ -106,6 +88,7 @@ async def accept(client, message):
     except Exception as e:
         await msg.edit(f"**An error occurred:** `{str(e)}`")
 
+
 @Client.on_chat_join_request()
 async def approve_new(client, m):
     if not NEW_REQ_MODE:
@@ -119,31 +102,23 @@ async def approve_new(client, m):
     bot_me = await client.get_me()
     bot_username = bot_me.username
 
-    # The join request event provides the user's access_hash.
-    # We store it here so the secondary bot can also use it directly
-    # without needing the user to have ever started Bot 2.
-    user_id = m.from_user.id
-    access_hash = m.from_user.access_hash
-
     try:
-        # Pyrogram MTProto has the access_hash from the event — DM works
-        # even if the user never pressed /start on the bot.
+        # Pyrogram MTProto has the user's peer cached from the join request event.
+        # This DM works even if the user never pressed /start on the bot.
         await client.send_message(
-            user_id,
+            m.from_user.id,
             text.ACCEPTED.format(m.from_user.mention, m.chat.title)
         )
     except UserIsBlocked:
-        # Primary bot is blocked. Try the secondary bot using the
-        # access_hash from the join request so it can reach the user
-        # without them having started Bot 2.
-        second_bot = await get_second_bot()
-        if second_bot:
+        # Primary bot is blocked. Try the secondary bot.
+        # Bot 2 MUST also be added as admin (Invite Users) to the same
+        # channel/group. This gives it the same join request event, which
+        # caches the user's peer in its own session — allowing it to DM them.
+        if second_bot and second_bot.is_connected:
             try:
-                # Build the peer directly with the access_hash we already have
-                peer = InputPeerUser(user_id=user_id, access_hash=access_hash)
                 second_me = await second_bot.get_me()
                 await second_bot.send_message(
-                    peer,
+                    m.from_user.id,
                     text.ACCEPTED_BLOCKED.format(
                         m.from_user.mention,
                         m.chat.title,
@@ -154,35 +129,36 @@ async def approve_new(client, m):
                 try:
                     await client.send_message(
                         LOG_CHANNEL,
-                        f"🚫 <b>Primary Bot Blocked — Secondary Bot Sent DM Successfully</b>\n\n"
-                        f"👤 User: {m.from_user.mention} (<code>{user_id}</code>)\n"
+                        f"🚫 <b>Primary Bot Blocked — Secondary Bot Sent DM</b>\n\n"
+                        f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
+                        f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
+                        f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)"
+                    )
+                except Exception:
+                    pass
+            except UserIsBlocked:
+                # User blocked both bots — nothing more we can do
+                try:
+                    await client.send_message(
+                        LOG_CHANNEL,
+                        f"🚫 <b>User Blocked Both Bots</b>\n\n"
+                        f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
                         f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
                         f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)"
                     )
                 except Exception:
                     pass
             except Exception as e:
-                print(f"Secondary bot also failed: {e}")
-                try:
-                    await client.send_message(
-                        LOG_CHANNEL,
-                        f"🚫 <b>Both Bots Failed to DM User</b>\n\n"
-                        f"👤 User: {m.from_user.mention} (<code>{user_id}</code>)\n"
-                        f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
-                        f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)\n\n"
-                        f"❌ Error: {e}"
-                    )
-                except Exception:
-                    pass
+                print(f"Secondary bot failed to send: {e}")
         else:
             try:
                 await client.send_message(
                     LOG_CHANNEL,
-                    f"🚫 <b>User Blocked the Bot — No Secondary Bot Configured</b>\n\n"
-                    f"👤 User: {m.from_user.mention} (<code>{user_id}</code>)\n"
+                    f"🚫 <b>User Blocked Bot — No Secondary Bot Running</b>\n\n"
+                    f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
                     f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
                     f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)\n\n"
-                    f"ℹ️ Set BOT_TOKEN_2 env variable to enable secondary bot fallback."
+                    f"ℹ️ Set <code>BOT_TOKEN_2</code> and add Bot 2 as admin to enable fallback."
                 )
             except Exception:
                 pass
