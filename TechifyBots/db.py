@@ -74,15 +74,17 @@ class Techifybots:
 
     # ── Extra bot management ──────────────────────────────────────────────────
 
-    async def add_extra_bot(self, token: str, username: str) -> bool:
+    async def upsert_extra_bot(self, token: str, username: str) -> bool:
+        """Insert or update an extra bot record. Returns True on success."""
         try:
-            existing = await self.extra_bots.find_one({"token": token})
-            if existing:
-                return False
-            await self.extra_bots.insert_one({"token": token, "username": username})
+            await self.extra_bots.update_one(
+                {"token": token},
+                {"$set": {"token": token, "username": username}},
+                upsert=True
+            )
             return True
         except Exception as e:
-            print("Error in add_extra_bot:", e)
+            print("Error in upsert_extra_bot:", e)
             return False
 
     async def remove_extra_bot(self, token: str) -> bool:
