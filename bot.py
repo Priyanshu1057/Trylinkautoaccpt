@@ -4,6 +4,7 @@ from pytz import timezone
 from pyrogram import Client
 from aiohttp import web
 from config import API_ID, API_HASH, BOT_TOKEN, ADMIN, LOG_CHANNEL
+from TechifyBots.second import init_second_bot
 
 routes = web.RouteTableDef()
 
@@ -37,10 +38,13 @@ class Bot(Client):
         except Exception as e:
             print(f"Web server error: {e}")
 
-
         await super().start()
         me = await self.get_me()
-        print(f"Bot Started as {me.first_name}")
+        print(f"Primary bot started as {me.first_name}")
+
+        # Start secondary bot (if BOT_TOKEN_2 is set)
+        await init_second_bot()
+
         if isinstance(ADMIN, int):
             try:
                 await self.send_message(ADMIN, f"**{me.first_name} is started...**")
@@ -60,7 +64,10 @@ class Bot(Client):
                 print(f"Error sending to LOG_CHANNEL: {e}")
 
     async def stop(self, *args):
+        from TechifyBots.second import second_bot
+        if second_bot and second_bot.is_connected:
+            await second_bot.stop()
         await super().stop()
-        print(f"{me.first_name} Bot stopped.")
+        print("Bot stopped.")
 
 Bot().run()
