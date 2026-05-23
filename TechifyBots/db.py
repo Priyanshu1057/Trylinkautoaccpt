@@ -8,13 +8,14 @@ db = client[DB_NAME]
 class Techifybots:
     def __init__(self):
         self.users = db["users"]
+        self.extra_bots = db["extra_bots"]
         self.cache: dict[int, dict[str, Any]] = {}
 
     async def add_user(self, user_id: int, name: str) -> dict[str, Any] | None:
         try:
             user: dict[str, Any] = {"user_id": user_id, "name": name, "session": None}
             await self.users.insert_one(user)
-            self.cache[user_id] = user      
+            self.cache[user_id] = user
             return user
         except Exception as e:
             print("Error in add_user:", e)
@@ -70,5 +71,36 @@ class Techifybots:
         except Exception as e:
             print("Error in delete_user:", e)
             return False
+
+    # ── Extra bot management ──────────────────────────────────────────────────
+
+    async def add_extra_bot(self, token: str, username: str) -> bool:
+        try:
+            existing = await self.extra_bots.find_one({"token": token})
+            if existing:
+                return False
+            await self.extra_bots.insert_one({"token": token, "username": username})
+            return True
+        except Exception as e:
+            print("Error in add_extra_bot:", e)
+            return False
+
+    async def remove_extra_bot(self, token: str) -> bool:
+        try:
+            result = await self.extra_bots.delete_one({"token": token})
+            return result.deleted_count > 0
+        except Exception as e:
+            print("Error in remove_extra_bot:", e)
+            return False
+
+    async def get_all_extra_bots(self) -> list[dict[str, Any]]:
+        try:
+            bots: list[dict[str, Any]] = []
+            async for bot in self.extra_bots.find():
+                bots.append(bot)
+            return bots
+        except Exception as e:
+            print("Error in get_all_extra_bots:", e)
+            return []
 
 tb = Techifybots()

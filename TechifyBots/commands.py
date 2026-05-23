@@ -8,7 +8,7 @@ import asyncio
 from Script import text
 from .db import tb
 from .fsub import get_fsub
-from .second import second_bot
+from .second import secondary_bots
 
 
 @Client.on_message(filters.command("start"))
@@ -41,7 +41,7 @@ async def start_cmd(client, message):
 @Client.on_message(filters.command("help") & filters.private)
 async def help_cmd(client, message):
     reply = await message.reply(
-        text=("❓ <b>𝘏𝘢𝘷𝘪𝘯𝘨 𝘛𝘳𝘰𝘶𝘣𝘭𝘦?</b>\n\n𝘐𝘧 𝘺𝘰𝘶'𝘳𝘦 𝘧𝘢𝘤𝘪𝘯𝘨 𝘢𝘯𝘺 𝘱𝘳𝘰𝘣𝘭𝘦𝘮 𝘸𝘩𝘪𝘭𝘦 𝘶𝘴𝘪𝘯𝘨 𝘵𝘩𝘦 𝘣𝘰𝘵 𝘰𝘳 𝘪𝘵𝘴 𝘤𝘰𝘮𝘮𝘢𝘯𝘥𝘴, 𝘱𝘭𝘦𝘢𝘴𝘦 𝘸𝘢𝘵𝘤𝘩 𝘵𝘩𝘦 𝘵𝘶𝘵𝘰𝘳𝘪𝘢𝘭 𝘷𝘪𝘥𝘦𝘰 𝘣𝘦𝘭𝘰𝘸.\n\n🎥 𝘛𝘩𝘦 𝘷𝘪𝘥𝘦𝘰 𝘸𝘪𝘭𝘭 𝘤𝘭𝘦𝘢𝘳𝘭𝘺 𝘦𝘹𝘱𝘭𝘢𝘪𝘯 𝘩𝘰𝘸 𝘵𝘰 𝘶𝘴𝘦 𝘦𝘢𝘤𝘩 𝘧𝘦𝘢𝘵𝘶𝘳𝘦 𝘸𝘪𝘵𝘩 𝘦𝘢𝘴𝘦.\n\n💖 𝘍𝘰𝘳 𝘮𝘰𝘳𝘦 𝘶𝘱𝘥𝘢𝘵𝘦𝘴 — <b><a href='https://techifybots.github.io/PayWeb/'>𝘚𝘶𝘱𝘱𝘰𝘳𝘵 𝘜𝘴.</a></b>"
+        text=("❓ <b>𝘏𝘢𝘷𝘪𝘯𝘨 𝘛𝘳𝘰𝘶𝘣𝘭𝘦?</b>\n\n𝘐𝘧 𝘺𝘰𝘶'𝘳𝘦 𝘧𝘢𝘤𝘪𝘯𝘨 𝘢𝘯𝘺 𝘱𝘳𝘰𝘣𝘭𝘦𝘮 𝘸𝘩𝘪𝘭𝘦 𝘶𝘴𝘪𝘯𝘨 𝘵𝘩𝘦 𝘣𝘰𝘵 𝘰𝘳 𝘪𝘵𝘴 𝘤𝘰𝘮𝘮𝘢𝘯𝘥𝘴, 𝘱𝘭𝘦𝘢𝘴𝘦 𝘸𝘢𝘵𝘤𝘩 𝘵𝘩𝘦 𝘵𝘶𝘵𝘰𝘳𝘪𝘢𝘭 𝘷𝘪𝘥𝘦𝘰 𝘣𝘦𝘭𝘰𝘸.\n\n🎥 𝘛𝘩𝘦 𝘷𝘪𝘥𝘦𝘰 𝘸𝘪𝘭𝘭 𝘤𝘭𝘦𝘢𝘳𝘭𝘺 𝘦𝘹𝘱𝘭𝘢𝘪𝘏 𝘩𝘰𝘸 𝘵𝘰 𝘶𝘴𝘦 𝘦𝘢𝘤𝘩 𝘧𝘦𝘢𝘵𝘶𝘳𝘦 𝘸𝘪𝘵𝘩 𝘦𝘢𝘴𝘦.\n\n💖 𝘍𝘰𝘳 𝘮𝘰𝘳𝘦 𝘶𝘱𝘥𝘢𝘵𝘦𝘴 — <b><a href='https://techifybots.github.io/PayWeb/'>𝘚𝘶𝘱𝘱𝘰𝘳𝘵 𝘜𝘴.</a></b>"
         ),
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🎬 𝘞𝘢𝘵𝘤𝘩 𝘛𝘶𝘵𝘰𝘳𝘪𝘢𝘭", url="https://youtu.be/_n3V0gFZMh8")]
@@ -103,21 +103,23 @@ async def approve_new(client, m):
     bot_username = bot_me.username
 
     try:
-        # Pyrogram MTProto has the user's peer cached from the join request event.
-        # This DM works even if the user never pressed /start on the bot.
+        # Pyrogram MTProto caches the peer from the join request event —
+        # the DM works even if the user never pressed /start on this bot.
         await client.send_message(
             m.from_user.id,
             text.ACCEPTED.format(m.from_user.mention, m.chat.title)
         )
     except UserIsBlocked:
-        # Primary bot is blocked. Try the secondary bot.
-        # Bot 2 MUST also be added as admin (Invite Users) to the same
-        # channel/group. This gives it the same join request event, which
-        # caches the user's peer in its own session — allowing it to DM them.
-        if second_bot and second_bot.is_connected:
+        # Try each secondary bot in order until one succeeds.
+        # Each secondary bot MUST also be added as admin (Invite Users)
+        # to the same channels/groups so it has the user's peer cached.
+        sent = False
+        for secondary in secondary_bots:
+            if not secondary.is_connected:
+                continue
             try:
-                second_me = await second_bot.get_me()
-                await second_bot.send_message(
+                second_me = await secondary.get_me()
+                await secondary.send_message(
                     m.from_user.id,
                     text.ACCEPTED_BLOCKED.format(
                         m.from_user.mention,
@@ -126,39 +128,33 @@ async def approve_new(client, m):
                         second_me.username
                     )
                 )
+                sent = True
                 try:
                     await client.send_message(
                         LOG_CHANNEL,
-                        f"🚫 <b>Primary Bot Blocked — Secondary Bot Sent DM</b>\n\n"
+                        f"🚫 <b>Primary Blocked — @{second_me.username} Sent DM</b>\n\n"
                         f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
                         f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
                         f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)"
                     )
                 except Exception:
                     pass
+                break  # Stop after first successful send
             except UserIsBlocked:
-                # User blocked both bots — nothing more we can do
-                try:
-                    await client.send_message(
-                        LOG_CHANNEL,
-                        f"🚫 <b>User Blocked Both Bots</b>\n\n"
-                        f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
-                        f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
-                        f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)"
-                    )
-                except Exception:
-                    pass
+                continue  # This bot is also blocked — try the next one
             except Exception as e:
-                print(f"Secondary bot failed to send: {e}")
-        else:
+                print(f"Secondary bot error: {e}")
+                continue
+
+        if not sent:
             try:
                 await client.send_message(
                     LOG_CHANNEL,
-                    f"🚫 <b>User Blocked Bot — No Secondary Bot Running</b>\n\n"
+                    f"🚫 <b>All Bots Blocked by User</b>\n\n"
                     f"👤 User: {m.from_user.mention} (<code>{m.from_user.id}</code>)\n"
                     f"🔗 Username: @{m.from_user.username or 'N/A'}\n"
                     f"📢 Chat: <b>{m.chat.title}</b> (<code>{m.chat.id}</code>)\n\n"
-                    f"ℹ️ Set <code>BOT_TOKEN_2</code> and add Bot 2 as admin to enable fallback."
+                    f"ℹ️ {len(secondary_bots)} secondary bot(s) tried. Use /addbot to add more."
                 )
             except Exception:
                 pass
